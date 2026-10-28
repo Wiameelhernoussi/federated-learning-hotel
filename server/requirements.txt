@@ -1,0 +1,6 @@
+grpcio==1.62.0
+grpcio-tools==1.62.0
+flask==3.0.0
+flask-cors==4.0.0
+numpy==1.26.4
+pandas==2.2.0

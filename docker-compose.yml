@@ -1,0 +1,123 @@
+# Hotel dashboards available at:
+# Marriott → http://localhost:8001/dashboard
+# Hilton   → http://localhost:8002/dashboard
+# Accor    → http://localhost:8003/dashboard
+# Operator dashboard → http://localhost:3000
+
+services:
+  fl-server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "50051:50051" # gRPC
+      - "5000:5000"   # Flask API
+    volumes:
+      - ./data_server:/app/server # Pour sauvegarder les modèles .pt
+    environment:
+      - NUM_ROUNDS=20
+      - MIN_FIT_CLIENTS=2
+      - ROUND_TIMEOUT=30
+      - GRPC_PORT=50051
+      # set to "iid" or "non-iid" to label metrics for side-by-side dashboard comparison.
+      # To generate Non-IID data: set RUN_MODE=non-iid here AND PARTITION_TYPE=non-iid on all clients,
+      # then rebuild: docker-compose down -v && docker-compose up --build
+      - RUN_MODE=iid
+      # Simulation de perte de messages réseau (0.0 = désactivé, 0.1 = 10%, max 0.3)
+      # Décommenter la ligne ci-dessous pour activer les tests de perte de messages :
+      - MESSAGE_LOSS_RATE=0.0
+      # - MESSAGE_LOSS_RATE=0.1
+    networks:
+      - fl-network
+
+# ============================================================
+# TO RUN NON-IID MODE:
+# 1. Change RUN_MODE=non-iid in fl-server environment above
+# 2. Change PARTITION_TYPE=non-iid for all 3 clients below
+# 3. Run: docker-compose down -v && docker-compose up --build
+# Both IID and Non-IID results will appear side by side in the dashboard at http://localhost:3000
+# ============================================================
+
+  fl-client-0:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - "8001:8000"   # Marriott hotel dashboard
+    environment:
+      - CLIENT_ID=0
+      - HOTEL=Marriott
+      - PARTITION_TYPE=iid
+      - SEED=42
+      - SERVER_ADDRESS=fl-server:50051
+      - NUM_ROUNDS=20
+      - USE_FEDPROX=true
+      # DP disabled for now — re-enable by uncommenting the apply_differential_privacy() call in client.py
+      - DP_EPSILON=1.0
+      - DP_CLIP_NORM=1.0
+    depends_on:
+      - fl-server
+    volumes:
+      - ./data:/app/data
+    networks:
+      - fl-network
+
+  fl-client-1:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - "8002:8000"   # Hilton hotel dashboard
+    environment:
+      - CLIENT_ID=1
+      - HOTEL=Hilton
+      - PARTITION_TYPE=iid
+      - SEED=42
+      - SERVER_ADDRESS=fl-server:50051
+      - NUM_ROUNDS=20
+      - USE_FEDPROX=true
+      # DP disabled for now — re-enable by uncommenting the apply_differential_privacy() call in client.py
+      - DP_EPSILON=1.0
+      - DP_CLIP_NORM=1.0
+    depends_on:
+      - fl-server
+    volumes:
+      - ./data:/app/data
+    networks:
+      - fl-network
+
+  fl-client-2:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - "8003:8000"   # Accor hotel dashboard
+    environment:
+      - CLIENT_ID=2
+      - HOTEL=Accor
+      - PARTITION_TYPE=iid
+      - SEED=42
+      - SERVER_ADDRESS=fl-server:50051
+      - NUM_ROUNDS=20
+      - USE_FEDPROX=true
+      # DP disabled for now — re-enable by uncommenting the apply_differential_privacy() call in client.py
+      - DP_EPSILON=1.0
+      - DP_CLIP_NORM=1.0
+    depends_on:
+      - fl-server
+    volumes:
+      - ./data:/app/data
+    networks:
+      - fl-network
+
+  fl-dashboard:
+    build:
+      context: ./dashboard
+    ports:
+      - "3000:3000"
+    networks:
+      - fl-network
+
+networks:
+  fl-network:
+    driver: bridge

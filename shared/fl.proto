@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package fl;
+
+service FederatedService {
+    rpc Register(ClientInfo) returns (RegistrationAck) {}
+    rpc SendGradients(GradientUpdate) returns (AggregationResult) {}
+    rpc GetModel(RoundRequest) returns (ModelWeights) {}
+    rpc SendHeartbeat(Heartbeat) returns (HeartbeatAck) {}
+}
+
+message ClientInfo {
+    string client_id = 1;
+}
+
+message RegistrationAck {
+    bool success = 1;
+    string message = 2;
+}
+
+message ModelWeights {
+    bytes weights = 1;
+    int32 round_num = 2;
+    int64 lamport_time = 3;
+}
+
+message GradientUpdate {
+    bytes weights = 1;
+    int32 dataset_size = 2;
+    string client_id = 3;
+    float loss = 4;
+    float accuracy = 5;
+    int64 lamport_time = 6;
+}
+
+message AggregationResult {
+    bool success = 1;
+    int32 next_round_num = 2;
+}
+
+message RoundRequest {
+    string client_id = 1;
+    int32 requested_round = 2;
+}
+
+message Heartbeat {
+    string client_id = 1;
+    int64 timestamp = 2;
+    string status = 3; // READY, TRAINING, DONE
+}
+
+message HeartbeatAck {
+    bool received = 1;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+    int32 current_round = 1;
+    int32 active_clients = 2;
+    float global_loss = 3;
+    float global_accuracy = 4;
+}

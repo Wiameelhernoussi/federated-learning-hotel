@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Federated Learning Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-8">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-4xl font-bold text-blue-400">FL Hotel Dashboard</h1>
+            <div class="flex space-x-4 items-center">
+                <div class="bg-slate-800 px-4 py-2 rounded-lg shadow border border-slate-700">
+                    <span class="text-slate-400 text-sm">Round Actuel:</span>
+                    <span id="current-round" class="text-2xl font-bold text-green-400 ml-2">-</span>
+                </div>
+                <button id="toggle-polling" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold transition">
+                    Pause Polling
+                </button>
+            </div>
+        </div>
+
+        <!-- IID vs Non-IID side-by-side chart section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+
+            <!-- ===== IID Run ===== -->
+            <div class="bg-slate-800 p-6 rounded-xl shadow border border-slate-700">
+                <h2 class="text-2xl font-bold text-center text-blue-400 mb-6 tracking-wide">&#127760; IID Run</h2>
+                <div class="mb-6">
+                    <h3 class="text-sm font-semibold mb-2 text-center text-green-400 uppercase tracking-widest">Accuracy</h3>
+                    <canvas id="iidAccuracyChart"></canvas>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold mb-2 text-center text-red-400 uppercase tracking-widest">Loss</h3>
+                    <canvas id="iidLossChart"></canvas>
+                </div>
+            </div>
+
+            <!-- ===== Non-IID Run ===== -->
+            <div class="bg-slate-800 p-6 rounded-xl shadow border border-slate-700">
+                <h2 class="text-2xl font-bold text-center text-purple-400 mb-6 tracking-wide">&#127744; Non-IID Run</h2>
+                <div class="mb-6">
+                    <h3 class="text-sm font-semibold mb-2 text-center text-green-400 uppercase tracking-widest">Accuracy</h3>
+                    <canvas id="nonIidAccuracyChart"></canvas>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold mb-2 text-center text-red-400 uppercase tracking-widest">Loss</h3>
+                    <canvas id="nonIidLossChart"></canvas>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="bg-slate-800 rounded-xl shadow border border-slate-700 overflow-hidden">
+            <table class="w-full text-left">
+                <thead class="bg-slate-700 border-b border-slate-600">
+                    <tr>
+                        <th class="px-6 py-4 font-semibold">ID Client</th>
+                        <th class="px-6 py-4 font-semibold">Statut</th>
+                        <th class="px-6 py-4 font-semibold">Dernier Round Vu</th>
+                    </tr>
+                </thead>
+                <tbody id="clients-table-body" class="divide-y divide-slate-700">
+                    <!-- Rows populated by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:5000";
+        let isPolling = true;
+        let pollingInterval = null;
+
+        // ---- Chart factory ----
+        function makeChart(id, label, color, yMin, yMax) {
+            const ctx = document.getElementById(id).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{ label, data: [], borderColor: color, backgroundColor: color + '22',
+                                 tension: 0.3, fill: true, pointRadius: 3, pointHoverRadius: 6 }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { labels: { color: '#cbd5e1' } } },
+                    scales: {
+                        y: { min: yMin, max: yMax, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                        x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
+
+        // ---- Initialise the 4 charts ----
+        const charts = {
+            iidAcc:      makeChart('iidAccuracyChart',    'Accuracy (IID)',      '#4ade80', 0, 1),
+            iidLoss:     makeChart('iidLossChart',        'Loss (IID)',          '#f87171', 0, null),
+            nonIidAcc:   makeChart('nonIidAccuracyChart', 'Accuracy (Non-IID)', '#a78bfa', 0, 1),
+            nonIidLoss:  makeChart('nonIidLossChart',     'Loss (Non-IID)',     '#fb923c', 0, null),
+        };
+
+        function updateChart(chart, rows) {
+            chart.data.labels = rows.map(d => `R${d.round}`);
+            chart.data.datasets[0].data = rows.map(d => d[chart.data.datasets[0].label.toLowerCase().includes('acc') ? 'accuracy' : 'loss']);
+            chart.update();
+        }
+
+        function setChartData(chart, rows, field) {
+            chart.data.labels = rows.map(d => `R${d.round}`);
+            chart.data.datasets[0].data = rows.map(d => d[field]);
+            chart.update();
+        }
+
+        async function updateDashboard() {
+            if (!isPolling) return;
+
+            try {
+                // ---- Client status table ----
+                const statusRes = await fetch(`${API_URL}/status`);
+                const statusData = await statusRes.json();
+                const tbody = document.getElementById('clients-table-body');
+                tbody.innerHTML = '';
+                (statusData.clients || []).forEach(client => {
+                    const isInactive = client.statut === 'INACTIVE';
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-medium">${client.id}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                            ${isInactive ? 'bg-red-100 text-red-800' :
+                              client.statut === 'TRAINING' ? 'bg-blue-100 text-blue-800' :
+                              'bg-green-100 text-green-800'}">
+                                ${client.statut}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4">${client.last_round}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+                // ---- History & charts ----
+                const historyRes = await fetch(`${API_URL}/history`);
+                const historyData = await historyRes.json();
+
+                if (Array.isArray(historyData) && historyData.length > 0) {
+                    // Update current round indicator from the latest entry
+                    const latest = historyData[historyData.length - 1];
+                    document.getElementById('current-round').innerText = latest.round;
+
+                    // Split rows by mode
+                    const iidRows    = historyData.filter(d => d.mode === 'iid');
+                    const nonIidRows = historyData.filter(d => d.mode === 'non-iid');
+
+                    setChartData(charts.iidAcc,    iidRows,    'accuracy');
+                    setChartData(charts.iidLoss,   iidRows,    'loss');
+                    setChartData(charts.nonIidAcc, nonIidRows, 'accuracy');
+                    setChartData(charts.nonIidLoss, nonIidRows,'loss');
+                }
+
+            } catch (error) {
+                console.error("Erreur de connexion \u00e0 l'API:", error);
+            }
+        }
+
+        // Toggle polling
+        document.getElementById('toggle-polling').addEventListener('click', (e) => {
+            isPolling = !isPolling;
+            e.target.innerText = isPolling ? "Pause Polling" : "Reprendre Polling";
+            e.target.classList.toggle('bg-blue-600');
+            e.target.classList.toggle('bg-slate-600');
+        });
+
+        // Start polling every 5 seconds
+        updateDashboard();
+        pollingInterval = setInterval(updateDashboard, 5000);
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Système FL — Prédiction d'annulation hôtelière</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --border: #334155;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --blue: #3b82f6;
+            --blue-light: #60a5fa;
+            --green: #22c55e;
+            --yellow: #eab308;
+            --red: #ef4444;
+            --purple: #a78bfa;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+        /* ── HEADER ── */
+        header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 20px 32px;
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+        }
+        .header-left h1 { font-size: 1.75rem; font-weight: 700; color: var(--blue-light); }
+        .header-left p  { color: var(--muted); font-size: 0.9rem; margin-top: 2px; }
+        .header-right   { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 999px; font-size: 0.8rem; font-weight: 600;
+        }
+        .badge-green  { background: #14532d44; color: var(--green);  border: 1px solid #166534; }
+        .badge-blue   { background: #1e3a5f44; color: var(--blue-light); border: 1px solid #1d4ed8; }
+        .badge-red    { background: #450a0a44; color: var(--red);   border: 1px solid #991b1b; }
+        .stat-pill    { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; text-align: center; }
+        .stat-pill .val { font-size: 1.3rem; font-weight: 700; color: var(--green); }
+        .stat-pill .lbl { font-size: 0.72rem; color: var(--muted); }
+
+        /* ── LAYOUT ── */
+        main { max-width: 1200px; margin: 0 auto; padding: 28px 20px; display: flex; flex-direction: column; gap: 28px; }
+        .section-title { font-size: 1.15rem; font-weight: 700; color: var(--blue-light); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+        /* ── CARD ── */
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+
+        /* ── FORM ── */
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
+        .form-group input, .form-group select {
+            background: #0f172a; border: 1px solid var(--border); border-radius: 8px;
+            color: var(--text); padding: 10px 12px; font-size: 0.9rem; outline: none;
+            transition: border-color .2s;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: var(--blue); }
+        .checkbox-row { flex-direction: row; align-items: center; gap: 10px; }
+        .checkbox-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--blue); cursor: pointer; }
+        .btn-primary {
+            margin-top: 8px; width: 100%; padding: 14px; border: none; border-radius: 10px;
+            background: linear-gradient(135deg, #2563eb, #7c3aed); color: white;
+            font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity .2s, transform .1s;
+        }
+        .btn-primary:hover { opacity: .9; }
+        .btn-primary:active { transform: scale(.98); }
+
+        /* ── RESULT ── */
+        #result-box { display: none; margin-top: 20px; border-radius: 12px; overflow: hidden; }
+        .result-header {
+            padding: 20px 24px; display: flex; align-items: center; gap: 14px;
+            font-size: 1.3rem; font-weight: 800;
+        }
+        .result-header.low    { background: #14532d33; border-left: 4px solid var(--green); }
+        .result-header.medium { background: #71350033; border-left: 4px solid var(--yellow); }
+        .result-header.high   { background: #450a0a55; border-left: 4px solid var(--red); }
+        .result-body { padding: 20px 24px; background: #0f172a; display: flex; flex-direction: column; gap: 14px; }
+        .prob-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
+        .prob-bar-track {
+            height: 12px; background: #1e293b; border-radius: 99px; overflow: hidden;
+        }
+        .prob-bar-fill {
+            height: 100%; border-radius: 99px; transition: width 0.8s cubic-bezier(.4,0,.2,1);
+        }
+        .fill-low    { background: linear-gradient(90deg, #16a34a, #4ade80); }
+        .fill-medium { background: linear-gradient(90deg, #ca8a04, #fde047); }
+        .fill-high   { background: linear-gradient(90deg, #dc2626, #f87171); }
+        .result-meta { display: flex; gap: 20px; flex-wrap: wrap; }
+        .result-meta span { color: var(--muted); font-size: 0.85rem; }
+        .result-meta strong { color: var(--text); }
+        .recommendation {
+            border-radius: 8px; padding: 12px 16px; font-size: 0.9rem; line-height: 1.5;
+        }
+        .rec-high   { background: #450a0a33; border: 1px solid #991b1b; color: #fca5a5; }
+        .rec-medium { background: #71350033; border: 1px solid #b45309; color: #fde68a; }
+        .rec-low    { background: #14532d33; border: 1px solid #166534; color: #86efac; }
+
+        /* ── STATUS GRID ── */
+        .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
+        .status-kpi { background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+        .status-kpi .kv { font-size: 1.4rem; font-weight: 700; color: var(--blue-light); }
+        .status-kpi .kl { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+        /* ── TABLE ── */
+        .table-wrap { overflow-x: auto; border-radius: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { background: #0f172a; padding: 10px 14px; text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+        td { padding: 10px 14px; border-bottom: 1px solid #1e293b; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #1e293b44; }
+        .empty-msg { text-align: center; color: var(--muted); padding: 24px; font-size: 0.9rem; }
+
+        /* ── CHART ── */
+        .chart-wrap { height: 160px; }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+<header>
+    <div class="header-left">
+        <h1 id="hotel-title">🏨 Hôtel</h1>
+        <p>Federated Learning — Système de prédiction d'annulation</p>
+    </div>
+    <div class="header-right">
+        <span id="status-badge" class="badge badge-blue">⏳ Connexion…</span>
+        <div class="stat-pill">
+            <div class="val" id="h-round">—</div>
+            <div class="lbl">Round FL</div>
+        </div>
+        <div class="stat-pill">
+            <div class="val" id="h-accuracy">—</div>
+            <div class="lbl">Précision locale</div>
+        </div>
+    </div>
+</header>
+
+<main>
+
+    <!-- ═══════════════ SECTION 1 — PRÉDICTION ═══════════════ -->
+    <div class="card">
+        <div class="section-title">🔮 Prédiction d'annulation de réservation</div>
+
+        <form id="predict-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Durée avant arrivée (jours)</label>
+                    <input type="number" name="lead_time" min="0" max="365" value="30" required>
+                </div>
+                <div class="form-group">
+                    <label>Nuits en weekend</label>
+                    <input type="number" name="stays_weekend" min="0" max="7" value="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Nuits en semaine</label>
+                    <input type="number" name="stays_week" min="0" max="14" value="2" required>
+                </div>
+                <div class="form-group">
+                    <label>Nombre d'adultes</label>
+                    <input type="number" name="adults" min="1" max="4" value="2" required>
+                </div>
+                <div class="form-group">
+                    <label>Type de repas</label>
+                    <select name="meal">
+                        <option value="BB">BB — Bed &amp; Breakfast</option>
+                        <option value="HB">HB — Half Board</option>
+                        <option value="FB">FB — Full Board</option>
+                        <option value="SC">SC — Self Catering</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Segment marché</label>
+                    <select name="market_segment">
+                        <option value="Direct">Direct</option>
+                        <option value="Corporate">Corporate</option>
+                        <option value="Online TA">Online TA</option>
+                        <option value="Offline TA/TO">Offline TA/TO</option>
+                        <option value="Groups">Groups</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Annulations précédentes</label>
+                    <input type="number" name="previous_cancellations" min="0" max="10" value="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Modifications réservation</label>
+                    <input type="number" name="booking_changes" min="0" max="10" value="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Prix par nuit (ADR €)</label>
+                    <input type="number" name="adr" min="0" max="500" step="0.01" value="100" required>
+                </div>
+                <div class="form-group">
+                    <label>Demandes spéciales</label>
+                    <input type="number" name="special_requests" min="0" max="5" value="0" required>
+                </div>
+                <div class="form-group checkbox-row" style="align-self:end; padding-bottom:6px;">
+                    <input type="checkbox" name="is_repeated_guest" id="chk-repeat">
+                    <label for="chk-repeat" style="font-size:0.9rem; color:var(--text);">Client fidèle</label>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-primary" id="submit-btn">
+                Analyser le risque d'annulation →
+            </button>
+        </form>
+
+        <!-- RESULT BOX -->
+        <div id="result-box">
+            <div class="result-header" id="result-header"></div>
+            <div class="result-body">
+                <div class="prob-bar-wrap">
+                    <div style="display:flex;justify-content:space-between;">
+                        <span style="font-size:.85rem;color:var(--muted);">Probabilité d'annulation</span>
+                        <strong id="prob-pct" style="color:var(--text);"></strong>
+                    </div>
+                    <div class="prob-bar-track">
+                        <div class="prob-bar-fill" id="prob-bar" style="width:0%"></div>
+                    </div>
+                </div>
+                <div class="result-meta">
+                    <span>Confiance du modèle : <strong id="confidence-val"></strong></span>
+                    <span id="round-info" style="color:var(--muted);font-size:.85rem;"></span>
+                </div>
+                <div class="recommendation" id="rec-box"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ SECTION 2 — STATUT FL ═══════════════ -->
+    <div class="card">
+        <div class="section-title">📡 Statut de participation FL</div>
+        <div class="status-grid">
+            <div class="status-kpi"><div class="kv" id="s-round">—</div><div class="kl">Round actuel</div></div>
+            <div class="status-kpi"><div class="kv" id="s-accuracy">—</div><div class="kl">Accuracy locale</div></div>
+            <div class="status-kpi"><div class="kv" id="s-loss">—</div><div class="kl">Loss locale</div></div>
+            <div class="status-kpi"><div class="kv" id="s-status">—</div><div class="kl">Statut</div></div>
+            <div class="status-kpi"><div class="kv" id="s-preds">0</div><div class="kl">Prédictions totales</div></div>
+        </div>
+        <div class="section-title" style="font-size:.9rem;margin-bottom:8px;">Précision au fil des prédictions</div>
+        <div class="chart-wrap">
+            <canvas id="acc-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- ═══════════════ SECTION 3 — HISTORIQUE ═══════════════ -->
+    <div class="card">
+        <div class="section-title">📋 Historique des prédictions</div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Heure</th>
+                        <th>Lead Time</th>
+                        <th>Segment</th>
+                        <th>Prix/nuit</th>
+                        <th>Risque</th>
+                        <th>Probabilité</th>
+                    </tr>
+                </thead>
+                <tbody id="history-tbody">
+                    <tr><td colspan="6" class="empty-msg">Aucune prédiction encore</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+
+<script>
+const API = '';   // relative — works on any port
+
+// ── Accuracy mini-chart ──
+const accChart = new Chart(document.getElementById('acc-chart').getContext('2d'), {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Accuracy',
+            data: [],
+            borderColor: '#4ade80',
+            backgroundColor: '#4ade8022',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 3
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { min: 0, max: 1, grid: { color: '#334155' }, ticks: { color: '#94a3b8', font: { size: 11 } } },
+            x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+        }
+    }
+});
+
+// ── Status polling ──
+async function pollStatus() {
+    try {
+        const res = await fetch(`${API}/client-status`);
+        const d   = await res.json();
+
+        document.getElementById('hotel-title').textContent = '🏨 ' + (d.hotel || 'Hôtel');
+        document.title = (d.hotel || 'Hôtel') + ' — FL Dashboard';
+
+        document.getElementById('h-round').textContent    = d.current_round;
+        document.getElementById('h-accuracy').textContent = d.accuracy ? (d.accuracy * 100).toFixed(1) + '%' : '—';
+        document.getElementById('s-round').textContent    = d.current_round;
+        document.getElementById('s-accuracy').textContent = d.accuracy ? (d.accuracy * 100).toFixed(1) + '%' : '—';
+        document.getElementById('s-loss').textContent     = d.loss ? d.loss.toFixed(4) : '—';
+        document.getElementById('s-status').textContent   = d.status;
+        document.getElementById('s-preds').textContent    = d.total_predictions;
+
+        const badge = document.getElementById('status-badge');
+        const st    = d.status;
+        badge.className = 'badge ' + (
+            st === 'DONE' || st === 'READY' ? 'badge-green' :
+            st === 'TRAINING'               ? 'badge-blue'  : 'badge-red'
+        );
+        badge.textContent = st === 'DONE' || st === 'READY' ? '🟢 ACTIF'
+                          : st === 'TRAINING'               ? '🔵 ENTRAÎNEMENT'
+                          : '🔴 ' + st;
+    } catch(_) {
+        document.getElementById('status-badge').className = 'badge badge-red';
+        document.getElementById('status-badge').textContent = '🔴 Hors ligne';
+    }
+}
+
+// ── History polling ──
+async function pollHistory() {
+    try {
+        const res  = await fetch(`${API}/predictions-history`);
+        const rows = await res.json();
+        if (!Array.isArray(rows) || rows.length === 0) return;
+
+        // Update accuracy chart
+        const last20 = rows.slice(-20);
+        accChart.data.labels   = last20.map((_, i) => `#${i + 1}`);
+        accChart.data.datasets[0].data = last20.map(r => r.confidence);
+        accChart.update();
+
+        // Update history table
+        const tbody  = document.getElementById('history-tbody');
+        const recent = [...rows].reverse().slice(0, 10);
+        tbody.innerHTML = recent.map(r => {
+            const t  = r.timestamp ? new Date(r.timestamp).toLocaleTimeString('fr-FR') : '—';
+            const em = r.risk_emoji || '';
+            const cl = r.risk_level === 'HIGH' ? 'color:var(--red)' :
+                       r.risk_level === 'MEDIUM' ? 'color:var(--yellow)' : 'color:var(--green)';
+            return `<tr>
+                <td>${t}</td>
+                <td>${r.lead_time ?? '—'}</td>
+                <td>${r.market_segment ?? '—'}</td>
+                <td>${r.adr != null ? r.adr + ' €' : '—'}</td>
+                <td style="${cl}">${em} ${r.risk_level}</td>
+                <td>${r.cancellation_probability != null ? (r.cancellation_probability * 100).toFixed(1) + '%' : '—'}</td>
+            </tr>`;
+        }).join('');
+    } catch(_) {}
+}
+
+// ── Prediction form ──
+document.getElementById('predict-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Analyse en cours…';
+
+    const fd  = new FormData(e.target);
+    const payload = {
+        lead_time:             parseInt(fd.get('lead_time')),
+        stays_weekend:         parseInt(fd.get('stays_weekend')),
+        stays_week:            parseInt(fd.get('stays_week')),
+        adults:                parseInt(fd.get('adults')),
+        meal:                  fd.get('meal'),
+        market_segment:        fd.get('market_segment'),
+        is_repeated_guest:     fd.get('is_repeated_guest') ? 1 : 0,
+        previous_cancellations:parseInt(fd.get('previous_cancellations')),
+        booking_changes:       parseInt(fd.get('booking_changes')),
+        adr:                   parseFloat(fd.get('adr')),
+        special_requests:      parseInt(fd.get('special_requests'))
+    };
+
+    try {
+        const res  = await fetch(`${API}/predict`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+
+        if (d.error) {
+            alert('⚠️ ' + d.error);
+            return;
+        }
+
+        const box     = document.getElementById('result-box');
+        const header  = document.getElementById('result-header');
+        const fill    = document.getElementById('prob-bar');
+        const probPct = document.getElementById('prob-pct');
+        const conf    = document.getElementById('confidence-val');
+        const roundEl = document.getElementById('round-info');
+        const rec     = document.getElementById('rec-box');
+
+        const pct  = (d.cancellation_probability * 100).toFixed(1);
+        const lvl  = d.risk_level;
+
+        const titles = { HIGH: '🔴 RISQUE ÉLEVÉ D\'ANNULATION', MEDIUM: '🟡 RISQUE MODÉRÉ', LOW: '🟢 FAIBLE RISQUE' };
+        const recTxt = {
+            HIGH:   '⚠️ Action recommandée : contacter le client pour confirmer la réservation ou proposer un surclassement.',
+            MEDIUM: 'ℹ️ Surveillance recommandée : suivre l\'évolution de cette réservation.',
+            LOW:    '✅ Réservation stable — aucune action requise.'
+        };
+
+        header.textContent = titles[lvl];
+        header.className   = 'result-header ' + lvl.toLowerCase();
+        probPct.textContent = pct + '%';
+        conf.textContent   = (d.confidence * 100).toFixed(1) + '%';
+        roundEl.textContent = 'Modèle FL — Round ' + d.model_round;
+        fill.style.width   = pct + '%';
+        fill.className     = 'prob-bar-fill fill-' + lvl.toLowerCase();
+        rec.textContent    = recTxt[lvl];
+        rec.className      = 'recommendation rec-' + lvl.toLowerCase();
+        box.style.display  = 'block';
+
+        await pollHistory();
+    } catch(err) {
+        alert('Erreur réseau : ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Analyser le risque d\'annulation →';
+    }
+});
+
+// Boot
+pollStatus();
+pollHistory();
+setInterval(pollStatus,  5000);
+setInterval(pollHistory, 10000);
+</script>
+</body>
+</html>

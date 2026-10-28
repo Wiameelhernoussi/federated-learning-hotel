@@ -1,0 +1,31 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- Données et modèles (MNIST est retéléchargé automatiquement) ---
+data/
+data_server/
+*.pt
+
+# --- Artefacts lourds : PyTorch est installé par les Dockerfiles ---
+wheels/
+*.whl
+
+# --- Sorties d'exécution ---
+metrics.csv
+round_state.json
+logs_*.txt
+*.log
+
+# --- Code généré (recréé par grpc_tools dans les Dockerfiles) ---
+fl_pb2.py
+fl_pb2_grpc.py
+
+# --- Secrets, système, éditeurs ---
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
