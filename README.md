@@ -1,6 +1,6 @@
-﻿# Federated Learning pour l'hôtellerie
+# Federated Learning for the Hospitality Industry
 
-Système d'**apprentissage fédéré distribué** : trois hôtels (Marriott, Hilton, Accor) entraînent ensemble un modèle de deep learning **sans jamais partager leurs données brutes**. Un serveur central agrège uniquement les poids des modèles.
+A **distributed federated learning system**: three hotels (Marriott, Hilton, Accor) jointly train a deep learning model **without ever sharing their raw data**. A central server only aggregates the model weights.
 
 ![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.2-EE4C2C?logo=pytorch&logoColor=white)
@@ -8,48 +8,48 @@ Système d'**apprentissage fédéré distribué** : trois hôtels (Marriott, Hil
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-REST%20API-000000?logo=flask&logoColor=white)
 
-> Projet académique, EMSI, module Systèmes Distribués 2025-2026.
+> Academic project, EMSI, Distributed Systems course 2025-2026.
 
 ---
 
-## Ce que ce projet démontre
+## What this project demonstrates
 
-- **Communication distribuée** par gRPC et Protocol Buffers entre un serveur et plusieurs clients (`shared/fl.proto`).
-- **Agrégation fédérée** : FedAvg et FedProx, avec filtrage des clients byzantins.
-- **Concepts de systèmes distribués** : horloges logiques de Lamport, détection de pannes par heartbeat, reprise sur panne, checkpoint en cours de round, simulation de pertes de messages.
-- **Confidentialité** : les données restent chez chaque client, avec une option de confidentialité différentielle.
-- **Déploiement conteneurisé** : 5 services orchestrés avec Docker Compose.
-- **Observabilité** : un dashboard opérateur et une interface web par hôtel.
+- **Distributed communication** with gRPC and Protocol Buffers between a server and several clients (`shared/fl.proto`).
+- **Federated aggregation**: FedAvg and FedProx, with Byzantine client filtering.
+- **Distributed systems concepts**: Lamport logical clocks, heartbeat-based failure detection, crash recovery, mid-round checkpointing, message loss simulation.
+- **Privacy**: data stays on each client, with an optional differential privacy mechanism.
+- **Containerized deployment**: 5 services orchestrated with Docker Compose.
+- **Observability**: an operator dashboard and a web interface for each hotel.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph clients["Clients : données locales, jamais partagées"]
+    subgraph clients["Clients: local data, never shared"]
         C0["Marriott<br/>client-0 · UI :8001"]
         C1["Hilton<br/>client-1 · UI :8002"]
         C2["Accor<br/>client-2 · UI :8003"]
     end
-    S["fl-server<br/>agrégation FedAvg / FedProx<br/>détection de pannes · API REST :5000"]
-    D["fl-dashboard<br/>dashboard opérateur :3000"]
+    S["fl-server<br/>FedAvg / FedProx aggregation<br/>failure detection · REST API :5000"]
+    D["fl-dashboard<br/>operator dashboard :3000"]
 
-    C0 <-->|"gRPC :50051<br/>poids du modèle"| S
+    C0 <-->|"gRPC :50051<br/>model weights"| S
     C1 <-->|gRPC :50051| S
     C2 <-->|gRPC :50051| S
-    S -->|"métriques REST"| D
+    S -->|"REST metrics"| D
 ```
 
-| Service | Rôle |
+| Service | Role |
 |---|---|
-| `fl-server` | Coordonne les rounds, agrège les poids, détecte les pannes, expose une API REST |
-| `fl-client-0/1/2` | Entraînement local par hôtel et interface web de prédiction |
-| `fl-dashboard` | Courbes d'accuracy et de loss (IID vs Non-IID), statut des clients |
+| `fl-server` | Coordinates rounds, aggregates weights, detects failures, exposes a REST API |
+| `fl-client-0/1/2` | Local training for each hotel and a prediction web interface |
+| `fl-dashboard` | Accuracy and loss curves (IID vs Non-IID), client status |
 
-Un cycle d'entraînement (un *round*) se déroule ainsi : chaque client récupère le modèle global, l'entraîne sur ses données locales, renvoie ses poids, puis le serveur les agrège dès que `MIN_FIT_CLIENTS` clients ont répondu (ou à l'expiration de `ROUND_TIMEOUT`). Le diagramme de séquence complet est dans [DISTRIBUTED_SYSTEMS.md](./DISTRIBUTED_SYSTEMS.md).
+A training cycle (a *round*) works as follows: each client fetches the global model, trains it on its local data, sends back its weights, and the server aggregates them as soon as `MIN_FIT_CLIENTS` clients have responded (or when `ROUND_TIMEOUT` expires). The full sequence diagram is in [DISTRIBUTED_SYSTEMS.md](./DISTRIBUTED_SYSTEMS.md) (written in French).
 
-## Démarrage rapide
+## Quick start
 
-**Prérequis** : Docker et Docker Compose, 4 Go de RAM minimum, et une connexion internet. Au premier lancement, PyTorch CPU est installé pendant le build des images et MNIST est téléchargé.
+**Requirements**: Docker and Docker Compose, at least 4 GB of RAM, and an internet connection. On first launch, PyTorch CPU is installed while the images are built and MNIST is downloaded.
 
 ```bash
 git clone https://github.com/Wiameelhernoussi/federated-learning-hotel.git
@@ -57,75 +57,74 @@ cd federated-learning-hotel
 docker compose up --build
 ```
 
-L'entraînement démarre automatiquement dès que 2 clients sont enregistrés. Pour tout arrêter : `docker compose down -v`.
+Training starts automatically once 2 clients are registered. To stop everything: `docker compose down -v`.
 
 ### Interfaces
 
 | Interface | URL |
 |---|---|
-| Dashboard opérateur (IID vs Non-IID) | http://localhost:3000 |
-| Interface Marriott / Hilton / Accor | http://localhost:8001/dashboard · :8002 · :8003 |
-| API métriques | http://localhost:5000/metrics |
-| Statut des clients | http://localhost:5000/status |
-| Historique complet | http://localhost:5000/history |
+| Operator dashboard (IID vs Non-IID) | http://localhost:3000 |
+| Marriott / Hilton / Accor interface | http://localhost:8001/dashboard · :8002 · :8003 |
+| Metrics API | http://localhost:5000/metrics |
+| Client status | http://localhost:5000/status |
+| Full history | http://localhost:5000/history |
 
-## Algorithmes et mécanismes
+## Algorithms and mechanisms
 
-| Mécanisme | Fichier | Description |
+| Mechanism | File | Description |
 |---|---|---|
-| FedAvg | `server/aggregator.py` | Moyenne pondérée des poids selon la taille des datasets |
-| FedProx | `client/model.py` | Terme proximal pour limiter la dérive des clients en Non-IID |
-| Filtrage byzantin | `server/aggregator.py` | Exclusion des clients dont la norme L2 dépasse 10× la médiane |
-| Horloge de Lamport | `server/lamport_clock.py` | Ordonnancement logique des événements distribués |
-| Détection de pannes | `server/fault_detector.py` | Heartbeat toutes les 5 s, client INACTIVE après 15 s |
-| Checkpoint de round | `server/server.py` | Sauvegarde de l'état à chaque mise à jour reçue |
-| Pertes de messages | `server/server.py` | Simulation configurable (`MESSAGE_LOSS_RATE`) |
-| Confidentialité différentielle | `client/client.py` | Bruit gaussien sur les poids (désactivée par défaut) |
-| Backoff exponentiel | `client/client.py` | Reconnexion avec délai croissant et jitter |
+| FedAvg | `server/aggregator.py` | Weighted average of the weights by dataset size |
+| FedProx | `client/model.py` | Proximal term to limit client drift in Non-IID settings |
+| Byzantine filtering | `server/aggregator.py` | Excludes clients whose L2 norm exceeds 10× the median |
+| Lamport clock | `server/lamport_clock.py` | Logical ordering of distributed events |
+| Failure detection | `server/fault_detector.py` | Heartbeat every 5 s, client marked INACTIVE after 15 s |
+| Round checkpoint | `server/server.py` | State saved on every update received |
+| Message loss | `server/server.py` | Configurable simulation (`MESSAGE_LOSS_RATE`) |
+| Differential privacy | `client/client.py` | Gaussian noise added to the weights (disabled by default) |
+| Exponential backoff | `client/client.py` | Reconnection with increasing delay and jitter |
 
-## Expériences reproductibles
+## Reproducible experiments
 
-**Mode Non-IID** (données hétérogènes entre hôtels) : dans `docker-compose.yml`, passer `RUN_MODE=non-iid` sur le serveur et `PARTITION_TYPE=non-iid` sur les 3 clients, puis `docker compose down -v && docker compose up --build`. Les courbes IID et Non-IID s'affichent côte à côte dans le dashboard.
+**Non-IID mode** (heterogeneous data across hotels): in `docker-compose.yml`, set `RUN_MODE=non-iid` on the server and `PARTITION_TYPE=non-iid` on the 3 clients, then run `docker compose down -v && docker compose up --build`. The IID and Non-IID curves appear side by side in the dashboard.
 
-**Panne d'un client** : pendant l'entraînement, `docker stop federated-learning-hotel-fl-client-2-1`. Accor passe INACTIVE en moins de 15 s et le serveur continue avec les 2 clients restants. Un `docker start` le réintègre.
+**Client failure**: during training, run `docker stop federated-learning-hotel-fl-client-2-1`. Accor becomes INACTIVE in under 15 s and the server keeps going with the 2 remaining clients. A `docker start` brings it back.
 
-**Pertes réseau** : régler `MESSAGE_LOSS_RATE=0.1` sur le serveur, puis suivre `docker compose logs fl-server | grep "NETWORK SIM"`.
+**Network loss**: set `MESSAGE_LOSS_RATE=0.1` on the server, then follow `docker compose logs fl-server | grep "NETWORK SIM"`.
 
-Les scénarios de test détaillés se trouvent dans [DISTRIBUTED_SYSTEMS.md](./DISTRIBUTED_SYSTEMS.md).
+Detailed test scenarios are described in [DISTRIBUTED_SYSTEMS.md](./DISTRIBUTED_SYSTEMS.md).
 
-## Structure du dépôt
+## Repository structure
 
 ```
 .
 ├── shared/
-│   └── fl.proto                # Contrat gRPC (service, messages, horloge de Lamport)
+│   └── fl.proto                # gRPC contract (service, messages, Lamport clock)
 ├── server/
-│   ├── server.py               # Gestion des rounds, simulateur réseau, Lamport
-│   ├── aggregator.py           # FedAvg, filtrage byzantin, métriques
-│   ├── api.py                  # API REST Flask (métriques, statut, historique)
-│   ├── lamport_clock.py        # Horloge logique thread-safe
-│   └── fault_detector.py       # Détection de pannes par heartbeat
+│   ├── server.py               # Round management, network simulator, Lamport
+│   ├── aggregator.py           # FedAvg, Byzantine filtering, metrics
+│   ├── api.py                  # Flask REST API (metrics, status, history)
+│   ├── lamport_clock.py        # Thread-safe logical clock
+│   └── fault_detector.py       # Heartbeat-based failure detection
 ├── client/
-│   ├── client.py               # Boucle d'entraînement fédéré
-│   ├── model.py                # CNN, entraînement local, FedProx
-│   ├── data_loader.py          # Partitionnement IID / Non-IID
-│   ├── hotel_api.py            # API et interface de prédiction par hôtel
+│   ├── client.py               # Federated training loop
+│   ├── model.py                # CNN, local training, FedProx
+│   ├── data_loader.py          # IID / Non-IID partitioning
+│   ├── hotel_api.py            # Per-hotel prediction API and interface
 │   └── hotel_dashboard.html
 ├── dashboard/
-│   └── index.html              # Dashboard opérateur (Chart.js)
-├── docker-compose.yml          # Orchestration des 5 services
-└── DISTRIBUTED_SYSTEMS.md      # Analyse : architecture, RPC, horloges, CAP, pannes
+│   └── index.html              # Operator dashboard (Chart.js)
+├── docker-compose.yml          # Orchestration of the 5 services
+└── DISTRIBUTED_SYSTEMS.md      # Analysis: architecture, RPC, clocks, CAP, failures
 ```
 
-## À propos des données
+## About the data
 
-Le pipeline fédéré est entraîné et validé sur **MNIST**, benchmark standard de classification d'images. L'interface hôtelière illustre un cas d'usage de prédiction d'annulation : les champs d'une réservation sont encodés en entrée du modèle, et les classes 5 à 9 sont interprétées comme « risque élevé ». Il s'agit d'une **démonstration de l'architecture**, et non d'un modèle entraîné sur de vrais historiques de réservations. L'apport du projet est l'infrastructure distribuée.
+The federated pipeline is trained and validated on **MNIST**, a standard image classification benchmark. The hotel interface illustrates a booking cancellation use case: the fields of a reservation are encoded as model input, and classes 5 to 9 are interpreted as "high risk". This is a **demonstration of the architecture**, not a model trained on real booking histories. The contribution of this project is the distributed infrastructure.
 
 ## Documentation
 
-[DISTRIBUTED_SYSTEMS.md](./DISTRIBUTED_SYSTEMS.md) analyse en profondeur les choix d'architecture : multi-niveaux contre multi-couches, gRPC contre CORBA, horloges logiques contre NTP, compromis CAP, gestion des pannes et des timeouts.
+[DISTRIBUTED_SYSTEMS.md](./DISTRIBUTED_SYSTEMS.md) (in French) is an in-depth analysis of the architectural choices: multi-tier vs multi-layer, gRPC vs CORBA, logical clocks vs NTP, CAP trade-offs, failure and timeout handling.
 
-## Équipe
+## Author
 
-Wiame El Hernoussi · Marwa Harbal · Doha Bouthir
-
+Wiame El Hernoussi
